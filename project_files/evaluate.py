@@ -178,6 +178,4 @@ def run_evaluation():
 if __name__ == '__main__':
     while True:
         run_evaluation()
-        # again = input("Run another evaluation? (y/n): ")
-        # if again.lower() != 'y':
-        #     break
+        

@@ -132,3 +132,4 @@ def compute_reward_for_training(H_gnt, H_obs, dist_to_roi, d_min,distance_to_obs
 
     return reward, ratio
 
+EPISODES = 4000

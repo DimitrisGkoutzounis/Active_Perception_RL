@@ -1,5 +1,64 @@
 
 import numpy as np
+
+# --- Scene and Camera Parameters ---
+FX = 533.895
+FY = 534.07
+IMAGE_W = 1280
+IMAGE_H = 720
+MU = np.array([0.0, 0.0, 0.0]) # ROI center
+DIST_MIN = 7 # Minimum allowed distance to ROI center for the agent
+
+# --- Environment Generation ---
+# Point Cloud parameters (randomized range)
+PCD_A_MIN, PCD_A_MAX = 1.0, 3.5
+PCD_B_MIN, PCD_B_MAX = 1.0, 3.5
+PCD_C_MIN, PCD_C_MAX = 1.0, 3.5
+PCD_N_SAMPLES = 500
+
+# Obstacle generation parameters
+NUM_OBSTACLES = 8
+OBSTACLE_MIN_DIST_FROM_ROI = 15#25#15
+OBSTACLE_MAX_DIST_FROM_ROI = 40#130#40
+OBSTACLE_MIN_RADIUS = 2.0#1.0 #2
+OBSTACLE_MAX_RADIUS = 5.0 #5
+
+# Agent starting position generation parameters
+AGENT_MIN_START_DIST_FROM_ROI = 50#70
+AGENT_MAX_START_DIST_FROM_ROI = 80#150 #150, reward 120
+ENV_BOUNDS_X = [-100, 100]
+ENV_BOUNDS_Y = [-100, 100]
+
+
+# --- State Representation ---
+BINS = 30
+HIST_RANGE = [[0, IMAGE_W], [0, IMAGE_H]]
+
+
+# --- PPO Agent Hyperparameters (for training) ---
+POLICY_PATH = "saved_models/ppo_policy_camera_cnn_whole_circle.pth"
+N_EPISODES = 2000
+MAX_TIMESTEPS = 50
+BATCH_UPDATE_TIMESTEP = 2048#1050
+LR_ACTOR = 0.0001
+LR_CRITIC = 0.001
+GAMMA = 0.99
+K_EPOCHS = 3
+EPS_CLIP = 0.2
+ACTION_STD_INIT = 0.2
+ACTION_SCALING = 2.0
+
+ACTION_STD_INIT = 0.6               
+ACTION_STD_DECAY_RATE = 0.005      
+MIN_ACTION_STD = 0.1    
+
+# --- Evaluation Parameters ---
+EVAL_N_STEPS = 50
+EVAL_GRID_SIZE = 25 # For reward map generation
+EVAL_MAP_BOUNDS = [ENV_BOUNDS_X[0], ENV_BOUNDS_X[1], ENV_BOUNDS_Y[0], ENV_BOUNDS_Y[1]]
+
+
+import numpy as np
 import torch
 import matplotlib.pyplot as plt
 from torch.utils.tensorboard import SummaryWriter
@@ -433,3 +492,138 @@ def main():
 if __name__ == "__main__":
     main()
     # main_rnn()
+
+
+import numpy as np
+
+def compute_ratio(H_gnt, H_obs):
+    """Computes the ratio of observed intensity to ground truth intensity."""
+    sum_gnt = np.sum(H_gnt)
+    sum_obs = np.sum(H_obs)
+    if sum_gnt < 1e-9:
+        return 0.0 # Avoid division by zero
+    return sum_obs / sum_gnt
+
+def compute_non_seen_ratio(H_obs, H_gnt):
+    """Computes the ratio of non-seen intensity."""
+    sum_gnt = np.sum(H_gnt)
+    sum_obs = np.sum(H_obs)
+    if sum_gnt < 0:
+        return 1.0 # If nothing should be seen, then 100% is non-seen
+    return (sum_gnt - sum_obs) / sum_gnt
+
+def compute_entropy(H_obs):
+    """Computes the sum of intensities in the observed histogram as a proxy for entropy."""
+    
+    return np.sum(H_obs)
+
+def check_min_distance(dist_to_roi, d_min):
+    """Checks if the agent is closer than the minimum allowed distance."""
+    if dist_to_roi < d_min:
+        traversed_dist = dist_to_roi
+        return 1, traversed_dist # Returns 1 (penalty enabled) and the distance inside the zone
+    else:
+        return 0, 1 # Returns 0 (no penalty) and 0 distance
+
+def compute_reward(H_gnt, H_obs, dist_to_roi, d_min):
+    """
+    Computes the reward for the current state.
+    """
+    if np.sum(H_gnt) < 1e-9:
+        return 0.0, 0.0
+    
+    non_seen_ratio = compute_non_seen_ratio(H_obs,H_gnt)
+    entropy = compute_entropy(H_obs)
+    enable_min_dist, traversed_distance = check_min_distance(dist_to_roi,d_min)
+
+    ratio = np.sum(H_obs) / np.sum(H_gnt)
+    # reward = ratio
+    max_o = np.max(H_obs)
+    max_g = np.max(H_gnt)
+    
+    if max_o <= 0: max_o = 1.0
+    
+    if max_g <= 0: max_g = 1.0
+
+    
+    # reward = 2 * entropy  - 400 * non_seen_ratio - 0 * dist_to_roi - 1 * (enable_min_dist*traversed_distance)
+    # reward = 0.5 * entropy - 2000 * non_seen_ratio - 400 * (enable_min_dist*traversed_distance) - 50 * dist_to_roi
+    # reward = 0.5 * entropy - 10 * non_seen_ratio - 400 * (enable_min_dist*traversed_distance) - 10 * dist_to_roi
+    # this is the old that we liked, and seemed to be working on dimitris office
+    
+    #current entropy is computed - unnormalized, therefore i am replication the mistake by dividing with max_obs()
+    
+    reward = (0.5 * entropy) / max_o - 240 * non_seen_ratio - 400 * enable_min_dist  #THIS IS THE ONE WE ARE WORKING WITH DESPOINA
+    # reward = -400 * ( enable_min_dist/traversed_distance)  # - 0 * non_seen_ratio - 0 * dist_to_roi - 400 * enable_min_dist  
+    # reward = - 500 * dist_to_roi
+    
+    return reward, ratio
+
+def compute_reward_for_training(H_gnt, H_obs, dist_to_roi, d_min,distance_to_obs):
+    """
+    Computes the reward using the formula from your training script.
+    It includes penalties for being too close and for non-seen regions.
+    """
+    # entropy = compute_entropy(H_obs)
+    # non_seen_ratio = compute_non_seen_ratio(H_obs, H_gnt)
+    # enable_min_dist, traversed_distance = check_min_distance(dist_to_roi, d_min)
+
+    # # From train_ppo_cnn_whole_experiment.py:
+    # # reward = 0.5 * entropy - 20 * non_seen_ratio - 0 * dist_to_roi - 400 * enable_min_dist
+    # # reward = 0.5 * entropy - 20 * non_seen_ratio - 400 * (enable_min_dist*traversed_distance) - 10 * dist_to_roi
+    
+    # # reward = 0.5 * entropy - 10 * non_seen_ratio - 400 * (enable_min_dist*traversed_distance) - 10 * dist_to_roi
+
+    # # reward = -500 * dist_to_roi
+    
+    
+    # max_o = np.max(H_obs)
+    # max_g = np.max(H_gnt)
+    
+    # if max_o <= 0: max_o = 1.0
+    
+    # if max_g <= 0: max_g = 1.0
+        
+    # ratio = compute_ratio(H_gnt, H_obs)
+    # # reward = (0.5 * entropy) / max_o - 120 * non_seen_ratio - 400 * enable_min_dist  #THIS IS THE ONE WE ARE WORKING WITH DESPOINA
+
+    # # reward = (0.5 * entropy) / max_o - 240 * non_seen_ratio - 400 * enable_min_dist  #THIS IS THE ONE WE ARE WORKING WITH DESPOINA
+    
+    # reward = ratio - 0.5 * dist_to_roi - 400 * enable_min_dist 
+    
+    
+
+    ratio = compute_ratio(H_gnt, H_obs)
+    visibility_reward = 1800 * ratio
+
+    distance_penalty = - 1/4 * dist_to_roi**2
+
+  
+    enable_min_dist, traversed_distance = check_min_distance(dist_to_roi, d_min)
+    too_close_penalty = -400 * (enable_min_dist * (d_min - traversed_distance))
+
+    timestep_penalty = -1
+    
+    success_bonus = 0
+    if ratio > 0.9:
+        success_bonus = 500
+        
+    occlusion_penalty = 0
+    if ratio < 0.9:
+        occlusion_penalty = -500
+        
+    occlusion_penalty = -3500 * (1 - ratio)
+
+    # dist_to_obs_penalty = -1000 * distance_to_obs**2
+    
+    if distance_to_obs < 5: #was 7
+        dist_to_obs_penalty = -4000#- 60 *  distance_to_obs**2
+    else:
+        dist_to_obs_penalty = 0
+        
+    
+        
+    reward =  distance_penalty + too_close_penalty + timestep_penalty  + occlusion_penalty + dist_to_obs_penalty + success_bonus
+
+    return reward, ratio
+
