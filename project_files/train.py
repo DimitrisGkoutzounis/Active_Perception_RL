@@ -1,0 +1,285 @@
+
+import numpy as np
+import torch
+import matplotlib.pyplot as plt
+from torch.utils.tensorboard import SummaryWriter
+
+# Import project-specific modules
+import config
+from src.agent import PPO, Memory
+from src.environment import point_cloud, project_point, in_fov, is_occluded, env_setup
+from src.utils import compute_reward_for_training
+
+def main():
+    if torch.backends.mps.is_available():
+        device = torch.device("mps")
+        print("Using Apple Metal (MPS) for training.")
+    else:
+        device = torch.device("cpu")
+        print("MPS not available. Using CPU for training.")
+
+
+    writer = SummaryWriter()
+    
+    
+    # --- PPO Agent ---
+    state_vec_dim = 2 # (x, y) position
+    action_dim = 2
+    ppo_agent = PPO(state_vec_dim, action_dim, config.LR_ACTOR, config.LR_CRITIC, 
+                    config.GAMMA, config.K_EPOCHS, config.EPS_CLIP, device, config.ACTION_STD_INIT, config.ACTION_STD_DECAY_RATE, config.MIN_ACTION_STD)
+    memory = Memory()
+
+    # --- Logging ---
+    all_rewards = []
+    all_cam_positions = []
+    all_mse_loss = []
+    all_start_pos = []
+    all_end_pos = []
+    illegal_start_pos = []
+    all_dist_to_roi = []
+    all_dist_to_obs = []
+    illegal_start_obs_pos = []
+    
+    timestep = 0
+    update_step_count = 0
+
+    print("Starting Training...")
+    for episode in range(config.N_EPISODES):
+        # Create a new random environment for each episode
+        a = np.random.uniform(config.PCD_A_MIN, config.PCD_A_MAX)
+        b = np.random.uniform(config.PCD_B_MIN, config.PCD_B_MAX)
+        c = np.random.uniform(config.PCD_C_MIN, config.PCD_C_MAX)
+        pcd3d_world = point_cloud(config.PCD_N_SAMPLES, a, b, c) + config.MU.reshape(3, 1)
+        pcd2d_world = pcd3d_world[:2, :].T
+        all_indices = np.arange(pcd2d_world.shape[0])
+        
+        obstacle_list, initial_camera_pos = env_setup()
+        all_start_pos.append(initial_camera_pos)
+        
+        state_vec = initial_camera_pos
+        current_ep_reward = 0
+
+        for t in range(config.MAX_TIMESTEPS):
+            timestep += 1
+            
+            cam_center_i = np.append(state_vec, 0.0)
+
+            # --- Camera Orientation ---
+            dist_i = np.array([[1,0,0],[0,1,0],[0,0,0]]) @ (config.MU - cam_center_i)
+            norm_dist_i = np.linalg.norm(dist_i)
+            if norm_dist_i < 1e-6: continue
+            zc_i = dist_i / norm_dist_i
+            xc_i_cand = np.cross(zc_i, [0, 0, 1])
+            norm_xc_i = np.linalg.norm(xc_i_cand)
+            if norm_xc_i < 1e-6: continue
+            xc_i = xc_i_cand / norm_xc_i
+            yc_i = np.cross(zc_i, xc_i)
+            R_i = np.vstack([xc_i, yc_i, zc_i])
+            
+            # --- Point Cloud Projection and Occlusion ---
+            pc_i = R_i @ (pcd3d_world - cam_center_i.reshape(3, 1))
+            gnt_point_cloud_px_i = project_point(pc_i.T, config.FX, config.FY)
+            gnt_point_cloud_px_fov_i, _ = in_fov(gnt_point_cloud_px_i, config.IMAGE_W, config.IMAGE_H)
+
+            # still_visible_indices = all_indices.copy()
+            # for obs_center_2d, obs_radius, _ in obstacle_list:
+            #     occluded_by_obs = is_occluded(pcd2d_world, cam_center_i[:2], obs_center_2d, obs_radius)
+            #     still_visible_indices = np.setdiff1d(still_visible_indices, occluded_by_obs, assume_unique=True)
+            
+            
+            visible_indices = all_indices.copy()
+
+            for obs_center_2d, obs_radius, _ in obstacle_list:
+                if visible_indices.size == 0:
+                    break
+
+                currently_visible_pcd = pcd2d_world[visible_indices]
+
+                newly_occluded_local_indices = is_occluded(
+                    currently_visible_pcd, cam_center_i[:2], obs_center_2d, obs_radius
+                )
+
+                if newly_occluded_local_indices.size > 0:
+                    newly_occluded_global_indices = visible_indices[newly_occluded_local_indices]
+
+                    
+                    visible_indices = np.setdiff1d(
+                        visible_indices, newly_occluded_global_indices, assume_unique=True
+                    )
+
+            still_visible_indices = visible_indices
+
+            observed_pc_camera_i = pc_i[:, still_visible_indices]
+            observed_point_cloud_px_i = project_point(observed_pc_camera_i.T, config.FX, config.FY)
+            observed_point_cloud_px_fov_i, _ = in_fov(observed_point_cloud_px_i, config.IMAGE_W, config.IMAGE_H)
+            
+            # --- State Creation ---
+            H_obs, _, _ = np.histogram2d(
+                observed_point_cloud_px_fov_i[:, 0], observed_point_cloud_px_fov_i[:, 1], 
+                bins=config.BINS, range=config.HIST_RANGE
+            )
+            H_gnt, _, _ = np.histogram2d(
+                gnt_point_cloud_px_fov_i[:, 0], gnt_point_cloud_px_fov_i[:, 1], 
+                bins=config.BINS, range=config.HIST_RANGE
+            )
+            
+            state_img = torch.FloatTensor(H_obs.T).unsqueeze(0).unsqueeze(0).to(device)
+            state_vec_tensor = torch.FloatTensor(state_vec).unsqueeze(0).to(device)
+
+            # --- Agent Action ---
+            action, log_prob = ppo_agent.act(state_img, state_vec_tensor)
+            action_np = action.cpu().numpy().flatten()
+            state_vec = state_vec + action_np * config.ACTION_SCALING
+
+            # --- Crash Detection and Reward ---
+            crashed = False
+            
+            for obs_center_2d, obs_radius, _ in obstacle_list:
+                distance_to_obs = np.linalg.norm(state_vec - obs_center_2d)
+                if distance_to_obs < obs_radius:
+                    
+                    crashed = True
+                    break
+            
+            distance_to_roi = np.linalg.norm(state_vec - config.MU[:2])
+            reward, ratio = compute_reward_for_training(H_gnt.flatten(), H_obs.flatten(), distance_to_roi, config.DIST_MIN, distance_to_obs if not crashed else 0.0)
+            
+            if crashed:
+                reward = -7000
+                print(f"Episode {episode+1} crashed at timestep {t+1}. Reward: {reward:.4f}")
+                done = True
+            else:
+                done = t == config.MAX_TIMESTEPS - 1
+
+            # --- Store and Update ---
+            memory.states_img.append(state_img)
+            memory.states_vec.append(state_vec_tensor)
+            memory.actions.append(action)
+            memory.logprobs.append(log_prob)
+            memory.rewards.append(reward)
+            memory.is_terminals.append(done)
+
+            # if timestep % config.BATCH_UPDATE_TIMESTEP == 0:
+            #     # Update the PPO agent
+            #     print("Updating PPO agent... at timestep:", timestep)
+            #     ppo_agent.update(memory)
+                
+            #     memory.clear()
+            #     timestep = 0
+            
+            if timestep % config.BATCH_UPDATE_TIMESTEP == 0:
+                print(f"Updating PPO agent... at update step: {update_step_count}")
+                p_loss, v_loss, entropy, avg_value = ppo_agent.update(memory)
+                
+                ppo_agent.decay_action_std()
+                
+                # --- LOG METRICS TO TENSORBOARD ---
+                writer.add_scalar('Loss/Policy_Loss', p_loss, update_step_count)
+                writer.add_scalar('Loss/Value_Loss', v_loss, update_step_count)
+                writer.add_scalar('Metrics/Policy_Entropy', entropy, update_step_count)
+                writer.add_scalar('Metrics/Average_Critic_Value', avg_value, update_step_count)
+                writer.add_scalar('Metrics/Action_STD', ppo_agent.action_std, update_step_count)
+
+                
+                update_step_count += 1
+                memory.clear()
+                
+                timestep = 0
+
+                
+                
+            current_ep_reward += reward
+            all_cam_positions.append(state_vec.copy())
+            
+            if done or crashed:
+                all_end_pos.append(state_vec.copy())
+                break
+                
+        avg_episode_reward = current_ep_reward / (t + 1)
+        all_rewards.append(avg_episode_reward)
+        all_dist_to_roi.append(distance_to_roi)
+
+        # --- LOG EPISODE-LEVEL METRICS ---
+        writer.add_scalar('Reward/Average_Episode_Reward', avg_episode_reward, episode)
+        writer.add_scalar('Metrics/Final_Distance_to_ROI', distance_to_roi, episode)
+        
+        # all_rewards.append(current_ep_reward / config.MAX_TIMESTEPS)
+        # all_dist_to_roi.append(distance_to_roi)
+        print(f"Episode {episode+1}/{config.N_EPISODES}: Avg Reward = {all_rewards[-1]:.4f}")
+
+    print("Training finished.")
+    torch.save(ppo_agent.policy.state_dict(), config.POLICY_PATH)
+    print(f"Policy saved to {config.POLICY_PATH}")
+    
+    writer.close()
+
+    # --- Visualization ---
+    plt.figure(figsize=(10, 5))
+    plt.plot(all_rewards)
+    plt.xlabel("Episode")
+    plt.ylabel("Average Reward per Episode")
+    plt.title("Training Progress")
+    plt.grid(True)
+    # plt.show()
+    
+    # --- Visualization ---
+    cam_centers = np.array(all_cam_positions)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
+
+    ax1.plot(all_rewards, c='b', label="Average reward per episode")
+    ax1.set_xlabel("Episode")
+    ax1.set_ylabel("Reward")
+    ax1.set_title("Rewards")
+    ax1.legend()
+    ax1.grid(True)
+
+
+    num_steps_total = cam_centers.shape[0]
+    step_indices = np.arange(num_steps_total)
+    all_start_pos_np = np.array(all_start_pos)
+    all_end_pos_np = np.array(all_end_pos)
+
+    sc = ax2.scatter(cam_centers[:, 0], cam_centers[:, 1], c=step_indices, s=10, alpha=0.7, label='Camera centers')
+    ax2.scatter(pcd3d_world[0,:], pcd3d_world[1,:], label='Point cloud (last ep.)')
+
+    for obs_pos_2d, obs_radius, obs_id in obstacle_list:
+        ax2.add_patch(plt.Circle(obs_pos_2d, obs_radius, fill=False, color='r', linewidth=2))
+        ax2.text(obs_pos_2d[0], obs_pos_2d[1], str(obs_id), color='r', fontsize=12, ha='center', va='center')
+
+    ax2.plot([], [], color='r', linewidth=2, label='Obstacles (last ep.)')[0].set_visible(False)
+    ax2.scatter(config.MU[0], config.MU[1], c='b', marker='x', s=150, label='ROI center')
+    ax2.scatter(all_start_pos_np[:,0], all_start_pos_np[:,1], c='g', label='Start')
+    ax2.scatter(all_end_pos_np[:,0], all_end_pos_np[:,1], c='r', label="End")
+
+    ax2.set_xlabel("X")
+    ax2.set_ylabel("Y")
+    ax2.set_title("Camera Trajectories Over Training")
+    ax2.set_aspect('equal')
+    ax2.legend()
+    ax2.grid(True)
+
+    plt.tight_layout()
+    cbar = plt.colorbar(sc, ax=ax2)
+    cbar.set_label("Timestep")
+    fig.savefig("trajectories_and_reward.png")
+
+    fig2, (ax3, ax4) = plt.subplots(1, 2, figsize=(16, 7))
+    ax3.plot(all_dist_to_obs)
+    ax3.set_ylabel("Distance")
+    ax3.set_xlabel("Episode")
+    ax3.set_title("Final Distance to Nearest Obstacle")
+    ax3.grid(True)
+
+    ax4.plot(all_dist_to_roi)
+    ax4.set_ylabel("Distance")
+    ax4.set_xlabel("Episode")
+    ax4.set_title("Final Distance to ROI")
+    ax4.grid(True)
+
+    plt.tight_layout()
+    fig2.savefig("distances_over_episodes.png") 
+
+    plt.show()
+
+if __name__ == "__main__":
+    main()

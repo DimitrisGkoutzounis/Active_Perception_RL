@@ -1,0 +1,86 @@
+
+import numpy as np
+
+def compute_ratio(H_gnt, H_obs):
+    """Computes the ratio of observed intensity to ground truth intensity."""
+    sum_gnt = np.sum(H_gnt)
+    sum_obs = np.sum(H_obs)
+    if sum_gnt < 1e-9:
+        return 0.0 # Avoid division by zero
+    return sum_obs / sum_gnt
+
+def compute_non_seen_ratio(H_obs, H_gnt):
+    """Computes the ratio of non-seen intensity."""
+    sum_gnt = np.sum(H_gnt)
+    sum_obs = np.sum(H_obs)
+    if sum_gnt < 0:
+        return 1.0 # If nothing should be seen, then 100% is non-seen
+    return (sum_gnt - sum_obs) / sum_gnt
+
+def compute_entropy(H_obs):
+    """Computes the sum of intensities in the observed histogram as a proxy for entropy."""
+    
+    return np.sum(H_obs)
+
+def check_min_distance(dist_to_roi, d_min):
+    """Checks if the agent is closer than the minimum allowed distance."""
+    if dist_to_roi < d_min:
+        traversed_dist = dist_to_roi
+        return 1, traversed_dist # Returns 1 (penalty enabled) and the distance inside the zone
+    else:
+        return 0, 1 # Returns 0 (no penalty) and 0 distance
+
+def compute_reward(H_gnt, H_obs, dist_to_roi, d_min):
+    """
+    Computes the reward for the current state.
+    """
+    if np.sum(H_gnt) < 1e-9:
+        return 0.0, 0.0
+    
+    non_seen_ratio = compute_non_seen_ratio(H_obs,H_gnt)
+    entropy = compute_entropy(H_obs)
+    enable_min_dist, traversed_distance = check_min_distance(dist_to_roi,d_min)
+
+    ratio = np.sum(H_obs) / np.sum(H_gnt)
+    # reward = ratio
+    max_o = np.max(H_obs)
+    max_g = np.max(H_gnt)
+    
+    if max_o <= 0: max_o = 1.0
+    
+    if max_g <= 0: max_g = 1.0
+
+    
+    # reward = 2 * entropy  - 400 * non_seen_ratio - 0 * dist_to_roi - 1 * (enable_min_dist*traversed_distance)
+    # reward = 0.5 * entropy - 2000 * non_seen_ratio - 400 * (enable_min_dist*traversed_distance) - 50 * dist_to_roi
+    reward = 0.5 * entropy - 10 * non_seen_ratio - 400 * (enable_min_dist*traversed_distance) - 10 * dist_to_roi
+    # this is the old that we liked, and seemed to be working on dimitris office
+    
+    #current entropy is computed - unnormalized, therefore i am replication the mistake by dividing with max_obs()
+    
+    # reward = (0.5 * entropy) / max_o - 120 * non_seen_ratio - 400 * enable_min_dist  #THIS IS THE ONE WE ARE WORKING WITH DESPOINA
+    # reward = -400 * ( enable_min_dist/traversed_distance)  # - 0 * non_seen_ratio - 0 * dist_to_roi - 400 * enable_min_dist  
+    # reward = - 500 * dist_to_roi
+    
+    return reward, ratio
+
+def compute_reward_for_training(H_gnt, H_obs, dist_to_roi, d_min):
+    """
+    Computes the reward using the formula from your training script.
+    It includes penalties for being too close and for non-seen regions.
+    """
+    entropy = compute_entropy(H_obs)
+    non_seen_ratio = compute_non_seen_ratio(H_obs, H_gnt)
+    enable_min_dist, traversed_distance = check_min_distance(dist_to_roi, d_min)
+
+    # From train_ppo_cnn_whole_experiment.py:
+    # reward = 0.5 * entropy - 20 * non_seen_ratio - 0 * dist_to_roi - 400 * enable_min_dist
+    # reward = 0.5 * entropy - 20 * non_seen_ratio - 400 * (enable_min_dist*traversed_distance) - 10 * dist_to_roi
+    
+    reward = 0.5 * entropy - 10 * non_seen_ratio - 400 * (enable_min_dist*traversed_distance) - 10 * dist_to_roi
+
+    # reward = -500 * dist_to_roi
+    
+    # ratio = compute_ratio(H_gnt, H_obs)
+    ratio =0
+    return reward, ratio
