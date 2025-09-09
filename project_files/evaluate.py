@@ -107,11 +107,25 @@ def run_evaluation():
         )
         
         distance_to_roi = np.linalg.norm(state_vec - config.MU[:2])
-        print("DIST", distance_to_roi)
-        distance_to_obs = None
-        crashed = False
+        # print("DIST", distance_to_roi)
+        # distance_to_obs = None
+        # crashed = False
+        
+        min_dist_obs = float('inf')
+        for obs_center_2d, obs_radius, _ in obstacle_list:
+            distance_to_obs = np.linalg.norm(cam_center_i[:2] - obs_center_2d)
+
+            if distance_to_obs < min_dist_obs:
+                min_dist_obs = distance_to_obs
+                    
+            if distance_to_obs < obs_radius:
+                crashed = True
+                break
+        distance_to_obs = min_dist_obs if np.isfinite(min_dist_obs) else 0.0
+
+
         # reward, ratio = compute_reward_for_training(H_gnt.flatten(), H_obs.flatten(), distance_to_roi, config.DIST_MIN)
-        reward, ratio = compute_reward_for_training(H_gnt.flatten(), H_obs.flatten(), distance_to_roi, config.DIST_MIN, distance_to_obs if not crashed else 0.0)
+        reward, ratio = compute_reward_for_training(H_gnt.flatten(), H_obs.flatten(), distance_to_roi, config.DIST_MIN,distance_to_obs)
 
         rewards_over_time.append(reward)
         print(f"Step: {step+1}/{config.EVAL_N_STEPS} | Position: [{state_vec[0]:.2f}, {state_vec[1]:.2f}] | Reward: {reward:.4f} | Ratio: {ratio:.4f}")

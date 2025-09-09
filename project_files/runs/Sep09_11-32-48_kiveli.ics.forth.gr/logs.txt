@@ -117,18 +117,12 @@ def compute_reward_for_training(H_gnt, H_obs, dist_to_roi, d_min,distance_to_obs
     if ratio < 0.9:
         occlusion_penalty = -500
         
-    occlusion_penalty = -2500 * (1 - ratio)
+    occlusion_penalty = -1800 * (1 - ratio)
 
     # dist_to_obs_penalty = -1000 * distance_to_obs**2
     
-    if distance_to_obs < 3.5: #was 7
-        dist_to_obs_penalty = -4000#- 60 *  distance_to_obs**2
-    else:
-        dist_to_obs_penalty = 0
-        
-    
-        
-    reward =  distance_penalty + too_close_penalty + timestep_penalty  + occlusion_penalty + dist_to_obs_penalty
+   
+    reward =  distance_penalty + too_close_penalty + timestep_penalty  + occlusion_penalty 
 
     return reward, ratio
 

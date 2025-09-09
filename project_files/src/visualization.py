@@ -10,7 +10,7 @@ import time
 import config
 
 from src.environment import project_point, in_fov, is_occluded
-from src.utils import compute_reward
+from src.utils import compute_reward, compute_reward_for_training
 
 def show_map_multiple_obstacles(obstacle_list, mu, pcd3d, d_min, trajectory=None, reward_map=None, reward_map_extent=None):
     clicked_point = []
@@ -33,7 +33,7 @@ def show_map_multiple_obstacles(obstacle_list, mu, pcd3d, d_min, trajectory=None
 
     color_center = np.mean(pcd3d, axis=1).reshape(3, -1)
     color = -np.linalg.norm(pcd3d - color_center, axis=0)
-    ax.scatter(pcd3d[0,:], pcd3d[1,:], pcd3d[2,:], c=color, cmap='inferno', label='ROI')
+    ax.scatter(pcd3d[0,:], pcd3d[1,:], c=color, cmap='inferno', label='ROI')
     ax.scatter(mu[0], mu[1], c='blue', marker='x', s=200, label='ROI Center')
 
     for obs_pos_2d, obs_radius, obs_id in obstacle_list:
@@ -187,11 +187,28 @@ def generate_reward_map(grid_size, bounds, pcd3d_world, obstacle_list, mu, fx, f
             gnt_point_cloud_px_i = project_point(pc_i.T, fx, fy)
             gnt_point_cloud_px_fov_i, _ = in_fov(gnt_point_cloud_px_i, image_w, image_h)
 
-            still_visible_indices = all_indices.copy()
-            for obstacle_center_2d_i, obstacle_radius_i, _ in obstacle_list:
-                occluded_by_obs_i = is_occluded(pcd2d_world, cam_center_i[:2], obstacle_center_2d_i, obstacle_radius_i)
-                still_visible_indices = np.setdiff1d(still_visible_indices, occluded_by_obs_i, assume_unique=True)
+            visible_indices = all_indices.copy()
 
+            for obs_center_2d, obs_radius, _ in obstacle_list:
+                if visible_indices.size == 0:
+                    break
+
+                currently_visible_pcd = pcd2d_world[visible_indices]
+
+                newly_occluded_local_indices = is_occluded(
+                    currently_visible_pcd, cam_center_i[:2], obs_center_2d, obs_radius
+                )
+
+                if newly_occluded_local_indices.size > 0:
+                    newly_occluded_global_indices = visible_indices[newly_occluded_local_indices]
+
+                    
+                    visible_indices = np.setdiff1d(
+                        visible_indices, newly_occluded_global_indices, assume_unique=True
+                    )
+
+            still_visible_indices = visible_indices
+            
             observed_pc_camera_i = pc_i[:, still_visible_indices]
             observed_point_cloud_px_i = project_point(observed_pc_camera_i.T, fx, fy)
             observed_point_cloud_px_fov_i, _ = in_fov(observed_point_cloud_px_i, image_w, image_h)
@@ -208,7 +225,21 @@ def generate_reward_map(grid_size, bounds, pcd3d_world, obstacle_list, mu, fx, f
             
             distance_to_roi = np.linalg.norm(cam_center_i[:2] - mu[:2])
             
-            reward, _ = compute_reward(H_gnt.flatten(), H_obs.flatten(), distance_to_roi, DIST_MIN)
+            min_dist_obs = float('inf')
+            for obs_center_2d, obs_radius, _ in obstacle_list:
+                distance_to_obs = np.linalg.norm(cam_center_i[:2] - obs_center_2d)
+
+                if distance_to_obs < min_dist_obs:
+                    min_dist_obs = distance_to_obs
+                    
+                if distance_to_obs < obs_radius:
+                    crashed = True
+                    break
+            distance_to_obs = min_dist_obs if np.isfinite(min_dist_obs) else 0.0
+            
+            # reward, _ = compute_reward(H_gnt.flatten(), H_obs.flatten(), distance_to_roi, DIST_MIN)
+            reward , _ = compute_reward_for_training(H_gnt.flatten(), H_obs.flatten(),
+                                                    distance_to_roi, DIST_MIN, distance_to_obs)
             reward_map[iy, ix] = reward
             
     end_time = time.time()

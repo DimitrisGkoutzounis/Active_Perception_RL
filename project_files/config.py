@@ -54,5 +54,5 @@ MIN_ACTION_STD = 0.1
 
 # --- Evaluation Parameters ---
 EVAL_N_STEPS = 50
-EVAL_GRID_SIZE = 20 # For reward map generation
+EVAL_GRID_SIZE = 70 # For reward map generation
 EVAL_MAP_BOUNDS = [ENV_BOUNDS_X[0], ENV_BOUNDS_X[1], ENV_BOUNDS_Y[0], ENV_BOUNDS_Y[1]]

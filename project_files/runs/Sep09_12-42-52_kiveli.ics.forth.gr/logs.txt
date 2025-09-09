@@ -1,0 +1,34 @@
+
+    ratio = compute_ratio(H_gnt, H_obs)
+    visibility_reward = 1800 * ratio
+
+    distance_penalty = - 1/4 * dist_to_roi**2
+
+  
+    enable_min_dist, traversed_distance = check_min_distance(dist_to_roi, d_min)
+    too_close_penalty = -400 * (enable_min_dist * (d_min - traversed_distance))
+
+    timestep_penalty = -1
+    
+    # success_bonus = 0
+    # if ratio > 0.9:
+    #     success_bonus = 250
+        
+    occlusion_penalty = 0
+    if ratio < 0.9:
+        occlusion_penalty = -500
+        
+    occlusion_penalty = -1800 * (1 - ratio)
+
+    # dist_to_obs_penalty = -1000 * distance_to_obs**2
+    
+    if distance_to_obs < 4: #was 7
+        dist_to_obs_penalty = -3000#- 60 *  distance_to_obs**2
+    else:
+        dist_to_obs_penalty = 0
+        
+    
+        
+    reward =  distance_penalty + too_close_penalty + timestep_penalty  + occlusion_penalty + dist_to_obs_penalty
+
+    return reward, ratio
