@@ -11,7 +11,6 @@ class ActorCritic(nn.Module):
         
         # --- CNN Branch for Image Input ---
         self.cnn_base = nn.Sequential(
-            # Input: [batch_size, 1, 30, 30] from config.BINS
             nn.Conv2d(1, 16, kernel_size=3, stride=1, padding=1), # -> [16, 30, 30]
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2, stride=2), # -> [16, 15, 15]

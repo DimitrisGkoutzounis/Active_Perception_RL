@@ -105,23 +105,41 @@ def run_evaluation():
             gnt_point_cloud_px_fov_i[:, 0], gnt_point_cloud_px_fov_i[:, 1], 
             bins=config.BINS, range=config.HIST_RANGE
         )
-        
+
+        print(f"Max GNT intensity: {np.max(H_gnt)} | Max OBS intensity: {np.max(H_obs)}")
+        print(f"Sum GNT intensity: {np.sum(H_gnt)} | Sum OBS intensity: {np.sum(H_obs)}")
+
         distance_to_roi = np.linalg.norm(state_vec - config.MU[:2])
         # print("DIST", distance_to_roi)
         # distance_to_obs = None
         # crashed = False
         
+        # min_dist_obs = float('inf')
+        # for obs_center_2d, obs_radius, _ in obstacle_list:
+        #     distance_to_obs = np.linalg.norm(cam_center_i[:2] - obs_center_2d)
+
+        #     if distance_to_obs < min_dist_obs:
+        #         min_dist_obs = distance_to_obs
+                    
+        #     if distance_to_obs < obs_radius:
+        #         crashed = True
+        #         break
+        # distance_to_obs = min_dist_obs if np.isfinite(min_dist_obs) else 0.0
+        
+        crashed = False
         min_dist_obs = float('inf')
         for obs_center_2d, obs_radius, _ in obstacle_list:
-            distance_to_obs = np.linalg.norm(cam_center_i[:2] - obs_center_2d)
+            distance_to_obs = np.linalg.norm(state_vec - obs_center_2d)
+                
 
             if distance_to_obs < min_dist_obs:
-                min_dist_obs = distance_to_obs
-                    
+                min_dist_obs = distance_to_obs                
             if distance_to_obs < obs_radius:
                 crashed = True
                 break
-        distance_to_obs = min_dist_obs if np.isfinite(min_dist_obs) else 0.0
+            
+            # distance to obs is the closest distance
+        distance_to_obs = min_dist_obs 
 
 
         # reward, ratio = compute_reward_for_training(H_gnt.flatten(), H_obs.flatten(), distance_to_roi, config.DIST_MIN)

@@ -37,7 +37,7 @@ HIST_RANGE = [[0, IMAGE_W], [0, IMAGE_H]]
 
 # --- PPO Agent Hyperparameters (for training) ---
 POLICY_PATH = "saved_models/ppo_policy_camera_cnn_whole_circle.pth"
-N_EPISODES = 4000
+N_EPISODES = 6000
 MAX_TIMESTEPS = 50
 BATCH_UPDATE_TIMESTEP = 2048#1050
 LR_ACTOR = 0.0001
@@ -48,7 +48,7 @@ EPS_CLIP = 0.2
 ACTION_STD_INIT = 0.2
 ACTION_SCALING = 2.0
 
-ACTION_STD_INIT = 0.6               
+ACTION_STD_INIT = 0.6  #             
 ACTION_STD_DECAY_RATE = 0.005      
 MIN_ACTION_STD = 0.1    
 

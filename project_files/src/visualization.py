@@ -235,7 +235,9 @@ def generate_reward_map(grid_size, bounds, pcd3d_world, obstacle_list, mu, fx, f
                 if distance_to_obs < obs_radius:
                     crashed = True
                     break
-            distance_to_obs = min_dist_obs if np.isfinite(min_dist_obs) else 0.0
+            
+            # distance to obs is the closest distance
+            distance_to_obs = min_dist_obs 
             
             # reward, _ = compute_reward(H_gnt.flatten(), H_obs.flatten(), distance_to_roi, DIST_MIN)
             reward , _ = compute_reward_for_training(H_gnt.flatten(), H_obs.flatten(),

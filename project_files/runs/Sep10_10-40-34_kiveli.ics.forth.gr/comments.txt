@@ -1,0 +1,5 @@
+Frequently stops at an occlusion when multiple obtacles are in the way.
+
+Changed the obstacle min distance function. 
+
+Considering going to 6000 episodes

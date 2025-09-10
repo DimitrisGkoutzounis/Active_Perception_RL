@@ -1,0 +1,66 @@
+{
+  "ACTION_SCALING": 2.0,
+  "ACTION_STD_DECAY_RATE": 0.005,
+  "ACTION_STD_INIT": 0.6,
+  "AGENT_MAX_START_DIST_FROM_ROI": 80,
+  "AGENT_MIN_START_DIST_FROM_ROI": 50,
+  "BATCH_UPDATE_TIMESTEP": 2048,
+  "BINS": 30,
+  "DIST_MIN": 7,
+  "ENV_BOUNDS_X": [
+    -100,
+    100
+  ],
+  "ENV_BOUNDS_Y": [
+    -100,
+    100
+  ],
+  "EPS_CLIP": 0.2,
+  "EVAL_GRID_SIZE": 100,
+  "EVAL_MAP_BOUNDS": [
+    -100,
+    100,
+    -100,
+    100
+  ],
+  "EVAL_N_STEPS": 50,
+  "FX": 533.895,
+  "FY": 534.07,
+  "GAMMA": 0.99,
+  "HIST_RANGE": [
+    [
+      0,
+      1280
+    ],
+    [
+      0,
+      720
+    ]
+  ],
+  "IMAGE_H": 720,
+  "IMAGE_W": 1280,
+  "K_EPOCHS": 3,
+  "LR_ACTOR": 0.0001,
+  "LR_CRITIC": 0.001,
+  "MAX_TIMESTEPS": 50,
+  "MIN_ACTION_STD": 0.1,
+  "MU": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "NUM_OBSTACLES": 8,
+  "N_EPISODES": 4000,
+  "OBSTACLE_MAX_DIST_FROM_ROI": 40,
+  "OBSTACLE_MAX_RADIUS": 5.0,
+  "OBSTACLE_MIN_DIST_FROM_ROI": 15,
+  "OBSTACLE_MIN_RADIUS": 2.0,
+  "PCD_A_MAX": 3.5,
+  "PCD_A_MIN": 1.0,
+  "PCD_B_MAX": 3.5,
+  "PCD_B_MIN": 1.0,
+  "PCD_C_MAX": 3.5,
+  "PCD_C_MIN": 1.0,
+  "PCD_N_SAMPLES": 500,
+  "POLICY_PATH": "saved_models/ppo_policy_camera_cnn_whole_circle.pth"
+}
