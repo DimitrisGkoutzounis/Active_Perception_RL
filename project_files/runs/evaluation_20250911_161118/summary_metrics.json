@@ -1,0 +1,21 @@
+{
+  "hparams": {
+    "n_episodes": 100,
+    "policy": "saved_models/ppo_policy_camera_cnn_whole_circle.pth",
+    "max_steps_per_episode": 70
+  },
+  "metrics": {
+    "summary/average_reward": 17402.325660731116,
+    "summary/crash_rate": 30.0,
+    "summary/occlusion_improved_rate": 27.0,
+    "summary/occlusion_stayed_good_rate": 46.0,
+    "summary/occlusion_stayed_bad_rate": 18.0,
+    "summary/occlusion_worsened_rate": 9.0,
+    "summary/occlusion_overall_good_rate": 73.0,
+    "summary/occlusion_overall_bad_rate": 27.0
+  },
+  "bad_start_config": {
+    "force_bad_start": false,
+    "bad_start_threshold": 0.5
+  }
+}

@@ -52,17 +52,26 @@ def is_occluded(pcd2d, cam_center_2d, obstacle_center_2d, obstacle_radius):
                 
     return np.array(occluded_indices)
 
-def env_setup():
+def env_setup(fixed_obstacle_config=False):
     # Generate Obstacles
     obstacle_list = []
+    
+    
+    if fixed_obstacle_config:
+        np.random.seed(42)
+    
+
     for i in range(config.NUM_OBSTACLES):
         obstacle_dist = np.random.uniform(config.OBSTACLE_MIN_DIST_FROM_ROI, config.OBSTACLE_MAX_DIST_FROM_ROI)
         obstacle_polar_angle = np.random.uniform(0, 2 * math.pi)
-        
+            
         obs_polar_coords = np.array([obstacle_dist, obstacle_polar_angle])
         obstacle_cart_pos = obs_polar_coords[0] * np.array([math.cos(obs_polar_coords[1]), math.sin(obs_polar_coords[1])])
         obstacle_radius = np.random.uniform(config.OBSTACLE_MIN_RADIUS, config.OBSTACLE_MAX_RADIUS)
         obstacle_list.append((obstacle_cart_pos, obstacle_radius, i))
+  
+    if fixed_obstacle_config:
+        np.random.seed(None) 
         
     camera_dist = np.random.uniform(config.AGENT_MIN_START_DIST_FROM_ROI, config.AGENT_MAX_START_DIST_FROM_ROI)
     camera_polar_angle = np.random.uniform(0, 2 * math.pi)

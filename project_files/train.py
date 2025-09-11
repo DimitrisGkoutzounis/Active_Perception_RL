@@ -3,6 +3,7 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 from torch.utils.tensorboard import SummaryWriter
+from datetime import datetime
 
 import json
 
@@ -215,6 +216,8 @@ def main():
                 writer.add_scalar('Metrics/Policy_Entropy', entropy, update_step_count)
                 writer.add_scalar('Metrics/Average_Critic_Value', avg_value, update_step_count)
                 writer.add_scalar('Metrics/Action_STD', ppo_agent.action_std, update_step_count)
+                 # --- LOG EPISODE-LEVEL METRICS ---
+
 
                 
                 update_step_count += 1
@@ -239,8 +242,9 @@ def main():
         all_rewards.append(avg_episode_reward)
         all_dist_to_roi.append(distance_to_roi)
 
-        # --- LOG EPISODE-LEVEL METRICS ---
+        # # --- LOG EPISODE-LEVEL METRICS ---
         writer.add_scalar('Reward/Average_Episode_Reward', avg_episode_reward, episode)
+        writer.add_scalar('Reward/Current_Episode_Reward', current_ep_reward, episode)
         writer.add_scalar('Metrics/Final_Distance_to_ROI', distance_to_roi, episode)
         
         # all_rewards.append(current_ep_reward / config.MAX_TIMESTEPS)
@@ -249,6 +253,7 @@ def main():
 
     print("Training finished.")
     torch.save(ppo_agent.policy.state_dict(), config.POLICY_PATH)
+    torch.save(ppo_agent.optimizer.state_dict(), writer.log_dir + f"/{datetime.now().strftime('%Y%m%d_%H%M%S')}_optimizer.pth")
     print(f"Policy saved to {config.POLICY_PATH}")
     
     writer.close()

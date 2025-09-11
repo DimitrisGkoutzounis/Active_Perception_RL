@@ -163,7 +163,7 @@ def run_evaluation():
 
         with torch.no_grad():
             action_mean, _ = policy.forward(state_img_tensor, state_vec_tensor)
-            action_tensor = action_mean # Use the deterministic action_mean
+            action_tensor = action_mean 
 
         # action_np = action_tensor.cpu().numpy().flatten()
         # state_vec = state_vec + action_np * config.ACTION_SCALING

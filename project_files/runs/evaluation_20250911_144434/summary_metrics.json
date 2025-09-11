@@ -1,0 +1,16 @@
+{
+  "hparams": {
+    "n_episodes": 100,
+    "policy": "saved_models/ppo_policy_camera_cnn_whole_circle.pth"
+  },
+  "metrics": {
+    "summary/average_reward": 31934.518104148003,
+    "summary/crash_rate": 9.0,
+    "summary/occlusion_improved_rate": 35.0,
+    "summary/occlusion_stayed_good_rate": 56.00000000000001,
+    "summary/occlusion_stayed_bad_rate": 6.0,
+    "summary/occlusion_worsened_rate": 3.0,
+    "summary/occlusion_overall_good_rate": 91.0,
+    "summary/occlusion_overall_bad_rate": 9.0
+  }
+}

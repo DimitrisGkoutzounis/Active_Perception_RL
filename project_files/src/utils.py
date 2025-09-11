@@ -126,8 +126,10 @@ def compute_reward_for_training(H_gnt, H_obs, dist_to_roi, d_min,distance_to_obs
     
 
     ratio = compute_ratio(H_gnt, H_obs)
-    visibility_reward = 1800 * ratio
+    visibility_reward = 6800 * ratio
 
+    non_seen_ratio = compute_non_seen_ratio(H_obs,H_gnt)
+    
     distance_penalty = - 1/4 * dist_to_roi**2
 
   
